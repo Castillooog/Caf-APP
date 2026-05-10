@@ -36,8 +36,8 @@ type UseProductsOptions = {
 
 export function useProducts(options: UseProductsOptions = {}) {
   const [products, setProducts] = useState<Product[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState<string | null>(null)
 
   const { categoryId, featuredOnly, search } = options
 
@@ -48,9 +48,9 @@ export function useProducts(options: UseProductsOptions = {}) {
       .select('*')
       .eq('is_available', true)
 
-    if (categoryId) query = query.eq('category_id', categoryId)
+    if (categoryId)  query = query.eq('category_id', categoryId)
     if (featuredOnly) query = query.eq('is_featured', true)
-    if (search) query = query.ilike('name', `%${search}%`)
+    if (search)      query = query.ilike('name', `%${search}%`)
 
     const { data, error } = await query.order('created_at', { ascending: false })
 
@@ -61,6 +61,19 @@ export function useProducts(options: UseProductsOptions = {}) {
 
   useEffect(() => {
     fetch()
+
+    // ✅ Realtime: re-fetch cuando cualquier producto cambie
+    // (INSERT, UPDATE, DELETE) — así is_available se refleja al instante
+    const channel = supabase
+      .channel(`products_realtime_${categoryId ?? 'all'}_${featuredOnly ?? ''}_${search ?? ''}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        () => fetch()
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [fetch])
 
   return { products, loading, error, refetch: fetch }
@@ -85,7 +98,6 @@ export function useOrders(userId: string | undefined) {
         setLoading(false)
       })
 
-    // Suscripción realtime: actualiza el estado del pedido en vivo
     const channel = supabase
       .channel(`orders_${userId}`)
       .on(
@@ -120,7 +132,7 @@ export function useOrders(userId: string | undefined) {
 
 export function useNotifications(userId: string | undefined) {
   const [notifications, setNotifications] = useState<Notification[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
+  const [unreadCount, setUnreadCount]     = useState(0)
 
   useEffect(() => {
     if (!userId) return
@@ -137,7 +149,6 @@ export function useNotifications(userId: string | undefined) {
         setUnreadCount(notifs.filter((n) => !n.is_read).length)
       })
 
-    // Realtime: nuevas notificaciones aparecen al instante
     const channel = supabase
       .channel(`notifs_${userId}`)
       .on(
@@ -176,7 +187,7 @@ export function useNotifications(userId: string | undefined) {
 
 export function useCreateOrder() {
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError]     = useState<string | null>(null)
 
   const createOrder = async (
     userId: string,
@@ -188,15 +199,14 @@ export function useCreateOrder() {
     setLoading(true)
     setError(null)
 
-    // 1. Crear el pedido
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .insert({
-        user_id: userId,
+        user_id:      userId,
         total,
         table_number: tableNumber,
         notes,
-        status: 'pending',
+        status:       'pending',
       })
       .select()
       .single()
@@ -207,14 +217,13 @@ export function useCreateOrder() {
       return null
     }
 
-    // 2. Insertar los items
     const orderItems = items.map((item) => ({
-      order_id: order.id,
-      product_id: item.product.id,
-      quantity: item.quantity,
-      unit_price: item.product.price,
+      order_id:         order.id,
+      product_id:       item.product.id,
+      quantity:         item.quantity,
+      unit_price:       item.product.price,
       selected_options: item.selectedOptions,
-      notes: item.notes,
+      notes:            item.notes,
     }))
 
     const { error: itemsError } = await supabase
@@ -227,12 +236,11 @@ export function useCreateOrder() {
       return null
     }
 
-    // 3. Crear el pago pendiente
     await supabase.from('payments').insert({
       order_id: order.id,
-      amount: total,
-      method: 'cash',
-      status: 'pending',
+      amount:   total,
+      method:   'cash',
+      status:   'pending',
     })
 
     setLoading(false)

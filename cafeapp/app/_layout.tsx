@@ -1,69 +1,82 @@
-import { useEffect } from 'react'
-import { Stack, router } from 'expo-router'
-import { StatusBar } from 'expo-status-bar'
-import { ActivityIndicator, View, StyleSheet } from 'react-native'
+import { useEffect, useRef } from 'react'
+import { Slot, useRouter, useSegments } from 'expo-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/useauthstore'
+import { usePushNotifications } from '@/hooks/usePushNotifications'
 
 export default function RootLayout() {
-  const { setSession, fetchProfile, loading } = useAuthStore()
+  const { session, profile, loading, setSession, fetchProfile } = useAuthStore()
+  const router    = useRouter()
+  const segments  = useSegments()
+  const isMounted = useRef(false)
+
+  usePushNotifications()
 
   useEffect(() => {
-    // Sesión activa al abrir la app
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    isMounted.current = true
+  }, [])
+
+  useEffect(() => {
+    // Carga inicial — sesión guardada en SecureStore/AsyncStorage
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session)
-      if (session?.user) fetchProfile(session.user.id)
+      if (session?.user) {
+        await fetchProfile(session.user.id)
+      } else {
+        useAuthStore.setState({ loading: false })
+      }
     })
 
-    // Escucha cambios: login, logout, token refresh
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+    // Escuchar cambios futuros (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        // ✅ FIX: En SIGNED_OUT, limpiar el store y redirigir inmediatamente
+        if (event === 'SIGNED_OUT') {
+          useAuthStore.setState({ session: null, profile: null, loading: false })
+          // Redirigir aquí directamente, sin esperar al useEffect de abajo
+          if (isMounted.current) {
+            router.replace('/(auth)/login')
+          }
+          return
+        }
+
         setSession(session)
+
         if (session?.user) {
-          fetchProfile(session.user.id)
-          // No navegamos aquí automáticamente para evitar el error
+          await fetchProfile(session.user.id)
+        } else {
+          useAuthStore.setState({ loading: false })
         }
       }
     )
 
-    return () => listener.subscription.unsubscribe()
-  }, [fetchProfile, setSession])
+    return () => subscription.unsubscribe()
+  }, [])
 
-  return (
-    <>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="product/[id]"
-          options={{
-            presentation: 'modal',
-            animation: 'slide_from_bottom',
-          }}
-        />
-      </Stack>
-      
-      {/* Loading overlay opcional */}
-      {loading && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#1C1208" />
-        </View>
-      )}
-    </>
-  )
+  // Redirigir según estado de sesión (para carga inicial y cambios de rol)
+  useEffect(() => {
+    if (!isMounted.current) return
+    if (loading) return
+
+    const inAuth = segments[0] === '(auth)'
+
+    if (!session && !inAuth) {
+      router.replace('/(auth)/login')
+      return
+    }
+
+    if (session && inAuth) {
+      redirectByRole(profile?.role)
+    }
+  }, [session, profile, loading, segments])
+
+  function redirectByRole(role?: string) {
+    switch (role) {
+      case 'kitchen': return router.replace('/(tabs)/orders' as any)
+      case 'cashier': return router.replace('/(tabs)/cashier' as any)
+      default:        return router.replace('/(tabs)' as any)
+    }
+  }
+
+  return <Slot />
 }
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#F5F0E8',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999,
-  },
-})

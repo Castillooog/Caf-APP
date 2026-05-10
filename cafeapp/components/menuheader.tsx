@@ -2,6 +2,7 @@ import React from 'react'
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
+import { Bell } from 'lucide-react-native'
 import { Colors, Font } from '@/constants/theme'
 import { useAuthStore } from '@/stores/useauthstore'
 import { useNotifications } from '@/hooks/useSupabase'
@@ -26,10 +27,10 @@ export function MenuHeader() {
       <View style={styles.actions}>
         <TouchableOpacity
           style={styles.iconButton}
-          onPress={() => router.push('/(tabs)/orders')}
+          onPress={() => router.push('/(tabs)/notifications')}
           activeOpacity={0.7}
         >
-          <Text style={styles.iconEmoji}>🔔</Text>
+          <Bell size={20} color={Colors.mocha} strokeWidth={2} />
           {unreadCount > 0 && (
             <View style={styles.dot}>
               <Text style={styles.dotText}>
@@ -91,9 +92,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-  },
-  iconEmoji: {
-    fontSize: 17,
   },
   dot: {
     position: 'absolute',

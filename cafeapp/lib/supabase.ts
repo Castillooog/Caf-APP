@@ -3,41 +3,51 @@ import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// ✅ Validación de variables de entorno
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Faltan variables de entorno de Supabase. Revisa tu archivo .env'
-  );
+  throw new Error('Faltan variables de entorno de Supabase. Revisa tu archivo .env');
 }
 
-// ✅ Función getStorage correctamente definida
 const getStorage = () => {
   if (Platform.OS === 'web') {
-    return typeof window !== 'undefined' ? window.localStorage : undefined;
+    return typeof window !== 'undefined' ? window.sessionStorage : undefined;
   }
   return AsyncStorage;
 };
 
-// ✅ Crear cliente de Supabase
+// ✅ En web: storageKey único por pestaña para aislar sesiones completamente
+const getStorageKey = () => {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    // Cada pestaña tiene su propio tabId en sessionStorage
+    let tabId = window.sessionStorage.getItem('_tab_id')
+    if (!tabId) {
+      tabId = crypto.randomUUID()
+      window.sessionStorage.setItem('_tab_id', tabId)
+    }
+    return `sb-auth-${tabId}`
+  }
+  return 'sb-auth-token'
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: getStorage(),
+    storageKey: getStorageKey(), // ✅ clave única por pestaña
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: Platform.OS === 'web',
   },
 });
 
-// ── Tipos derivados del schema ──────────────────────────────────────────────
+// ── Tipos ──────────────────────────────────────────────────────────────────
 
 export type Profile = {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
-  role: 'customer' | 'staff' | 'admin';
+  role: 'customer' | 'staff' | 'admin' | 'waiter' | 'kitchen' | 'cashier';
   created_at: string;
 };
 

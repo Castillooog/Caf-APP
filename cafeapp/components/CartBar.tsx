@@ -91,7 +91,7 @@ export function CartBar() {
         activeOpacity={1}
         onPressIn={onPressIn}
         onPressOut={onPressOut}
-        onPress={() => router.push('/(tabs)/cart')}
+        onPress={() => router.push('/(waiter)/cart' as any)}
         style={styles.bar}
       >
         <Animated.View
