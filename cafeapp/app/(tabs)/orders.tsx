@@ -66,6 +66,12 @@ function OrderCard({
   const { display: elapsed, isOverdue } = elapsedTime(order.created_at)
   const [loading, setLoading] = useState(false)
 
+  // Detectar si es domicilio
+  const isDelivery = order.notes?.includes('DOMICILIO:')
+  const deliveryAddress = isDelivery
+    ? order.notes?.match(/DOMICILIO: ([^|]+)/)?.[1]?.trim()
+    : null
+
   async function handlePress() {
     if (!action) return
     setLoading(true)
@@ -74,7 +80,9 @@ function OrderCard({
     finally { setLoading(false) }
   }
 
-  const tableLabel = order.table_number ? `MESA ${order.table_number}` : 'SIN MESA'
+  const tableLabel = isDelivery
+    ? '🛵 DOMICILIO'
+    : order.table_number ? `MESA ${order.table_number}` : 'SIN MESA'
 
   return (
     <View style={[styles.card, { borderColor: isOverdue ? '#E24B4A' : cfg.borderColor }]}>
@@ -89,6 +97,13 @@ function OrderCard({
           </Text>
         </View>
       </View>
+
+      {/* Dirección domicilio */}
+      {deliveryAddress && (
+        <View style={styles.deliveryBadge}>
+          <Text style={styles.deliveryText} numberOfLines={1}>📍 {deliveryAddress}</Text>
+        </View>
+      )}
 
       <View style={styles.itemsList}>
         {order.order_items.map(item => (
@@ -108,7 +123,7 @@ function OrderCard({
         ))}
       </View>
 
-      {order.notes ? (
+      {order.notes && !isDelivery ? (
         <View style={styles.orderNote}>
           <Text style={styles.orderNoteLabel}>NOTA DE BARRA</Text>
           <Text style={styles.orderNoteText}>{order.notes}</Text>
@@ -199,7 +214,6 @@ export default function OrdersScreen() {
       .channel(channelName)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
         const updated = payload.new as Order
-        // ✅ Actualización local inmediata
         setOrders(prev =>
           prev
             .map(o => o.id === updated.id ? { ...o, status: updated.status } : o)
@@ -220,7 +234,7 @@ export default function OrdersScreen() {
   }, [fetchOrders])
 
   async function handleAction(orderId: string, nextStatus: OrderStatus) {
-    // ✅ Actualización local inmediata — UI responde al instante
+    // ✅ Actualización local inmediata
     setOrders(prev =>
       prev
         .map(o => o.id === orderId ? { ...o, status: nextStatus } : o)
@@ -233,12 +247,11 @@ export default function OrdersScreen() {
       .eq('id', orderId)
 
     if (error) {
-      // ❌ Si falla, revertir desde la DB
       fetchOrders()
       throw error
     }
 
-    // Notificar al cliente
+    // ✅ Notificación sin 'type' ni 'message' — solo columnas que existen
     if (nextStatus === 'ready' || nextStatus === 'preparing') {
       const { data: orderData } = await supabase
         .from('orders')
@@ -260,20 +273,21 @@ export default function OrdersScreen() {
         const msg = msgMap[nextStatus]
         if (msg) {
           await supabase.from('notifications').insert({
-            user_id: orderData.user_id,
-            title:   msg.title,
-            message: msg.body,
-            type:    'order',
-            is_read: false,
+            user_id:  orderData.user_id,
+            order_id: orderId,
+            title:    msg.title,
+            body:     msg.body,
+            is_read:  false,
           })
         }
       }
     }
   }
 
-  const pendingCount    = orders.filter(o => o.status === 'pending' || o.status === 'confirmed').length
+  const pendingCount    = orders.filter(o => ['pending','confirmed'].includes(o.status)).length
   const inProgressCount = orders.filter(o => o.status === 'preparing').length
   const readyCount      = orders.filter(o => o.status === 'ready').length
+  const deliveryCount   = orders.filter(o => o.notes?.includes('DOMICILIO:')).length
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -314,7 +328,7 @@ export default function OrdersScreen() {
               refreshing={refreshing}
               onRefresh={() => { setRefreshing(true); fetchOrders() }}
               tintColor="#4B3621"
-              colors={["#4B3621"]}
+              colors={['#4B3621']}
             />
           }
           renderItem={({ item }) => (
@@ -341,6 +355,13 @@ export default function OrdersScreen() {
           <Text style={styles.footerStatLabel}>LISTOS</Text>
           <Text style={styles.footerStatNum}>{String(readyCount).padStart(2, '0')}</Text>
         </View>
+        {deliveryCount > 0 && (
+          <View style={styles.footerStat}>
+            <View style={[styles.dot, { backgroundColor: Colors.terra }]} />
+            <Text style={styles.footerStatLabel}>DOMICILIO</Text>
+            <Text style={styles.footerStatNum}>{String(deliveryCount).padStart(2, '0')}</Text>
+          </View>
+        )}
         <View style={styles.footerDivider} />
         <Text style={styles.footerProfile}>
           {profile?.full_name ?? 'Cocina'} · {profile?.role ?? ''}
@@ -350,15 +371,13 @@ export default function OrdersScreen() {
   )
 }
 
+// Importar Colors para el indicador de domicilio en el footer
+import { Colors } from '@/constants/theme'
+
 const styles = StyleSheet.create({
   screen:        { flex: 1, backgroundColor: '#F5F3EE' },
   centered:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 0.5, borderBottomColor: '#D3D1C7',
-  },
+  header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, backgroundColor: '#FFFFFF', borderBottomWidth: 0.5, borderBottomColor: '#D3D1C7' },
   headerBrand:   { fontSize: 16, fontWeight: '700', color: '#2C2C2A', letterSpacing: 1 },
   headerSection: { fontSize: 11, color: '#888780', letterSpacing: 1.5, marginTop: 1 },
   headerRight:   { flexDirection: 'row', alignItems: 'center' },
@@ -367,11 +386,13 @@ const styles = StyleSheet.create({
   row:           { gap: 12, marginBottom: 12 },
   cardWrap:      { flex: 1 },
   card:          { backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 2, padding: 14, flex: 1 },
-  cardHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  cardHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
   tableLabel:    { fontSize: 10, fontWeight: '600', color: '#888780', letterSpacing: 1 },
   orderId:       { fontSize: 22, fontWeight: '700', color: '#2C2C2A', marginTop: 2 },
   badge:         { borderRadius: 4, paddingHorizontal: 7, paddingVertical: 3 },
   badgeText:     { fontSize: 11, fontWeight: '600' },
+  deliveryBadge: { backgroundColor: '#FAEEDA', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 5, marginBottom: 8 },
+  deliveryText:  { fontSize: 11, color: '#854F0B', fontWeight: '600' },
   itemsList:     { gap: 6, marginBottom: 10 },
   itemRow:       { flexDirection: 'row', alignItems: 'center', gap: 8 },
   itemQtyBubble: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#F1EFE8', alignItems: 'center', justifyContent: 'center' },
@@ -380,8 +401,8 @@ const styles = StyleSheet.create({
   itemNote:      { marginLeft: 30, marginTop: 2, marginBottom: 4, backgroundColor: '#FCEBEB', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 3 },
   itemNoteText:  { fontSize: 11, color: '#A32D2D', fontStyle: 'italic' },
   orderNote:     { backgroundColor: '#F5F3EE', borderRadius: 6, padding: 10, marginBottom: 10, borderLeftWidth: 2, borderLeftColor: '#D3D1C7' },
-  orderNoteLabel: { fontSize: 9, fontWeight: '700', color: '#888780', letterSpacing: 1, marginBottom: 4 },
-  orderNoteText:  { fontSize: 12, color: '#5F5E5A', lineHeight: 17 },
+  orderNoteLabel:{ fontSize: 9, fontWeight: '700', color: '#888780', letterSpacing: 1, marginBottom: 4 },
+  orderNoteText: { fontSize: 12, color: '#5F5E5A', lineHeight: 17 },
   cardFooter:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   timerWrap:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
   timerText:     { fontSize: 13, fontWeight: '600', color: '#854F0B', fontVariant: ['tabular-nums'] },
@@ -390,17 +411,11 @@ const styles = StyleSheet.create({
   actionBtnText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
   emptyTitle:    { fontSize: 18, fontWeight: '600', color: '#2C2C2A' },
   emptySubtitle: { fontSize: 14, color: '#888780' },
-  footer: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 20, paddingTop: 12,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 0.5, borderTopColor: '#D3D1C7',
-    gap: 16,
-  },
-  footerStat:      { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dot:             { width: 8, height: 8, borderRadius: 4 },
+  footer:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 12, backgroundColor: '#FFFFFF', borderTopWidth: 0.5, borderTopColor: '#D3D1C7', gap: 16 },
+  footerStat:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dot:           { width: 8, height: 8, borderRadius: 4 },
   footerStatLabel: { fontSize: 10, fontWeight: '600', color: '#888780', letterSpacing: 0.8 },
-  footerStatNum:   { fontSize: 18, fontWeight: '700', color: '#2C2C2A', marginLeft: 2 },
-  footerDivider:   { flex: 1 },
-  footerProfile:   { fontSize: 12, color: '#888780' },
+  footerStatNum: { fontSize: 18, fontWeight: '700', color: '#2C2C2A', marginLeft: 2 },
+  footerDivider: { flex: 1 },
+  footerProfile: { fontSize: 12, color: '#888780' },
 })

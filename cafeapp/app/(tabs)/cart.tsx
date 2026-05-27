@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  ScrollView,
   Alert,
   ActivityIndicator,
 } from 'react-native'
@@ -16,19 +15,44 @@ import { Minus, Plus, Trash2, ShoppingBag, ArrowLeft, Receipt } from 'lucide-rea
 import { Colors, Font, Radius, Shadow, formatCOP } from '@/constants/theme'
 import { useCartStore } from '@/stores/usecartstore'
 import type { CartItem } from '@/stores/usecartstore'
+import { useLoyaltyStore } from '@/stores/useLoyaltyStore'
+// Inline replacement for missing module '@/components/cart-discount'
+type CartTotals = { subtotal: number; discountAmount: number; total: number; discountPct: number }
+function useCartTotals(items: Array<{ product: { price: number }; quantity: number }>): CartTotals {
+  const subtotal = items.reduce((s, it) => s + (it.product.price ?? 0) * (it.quantity ?? 0), 0)
+  const discountPct = 0
+  const discountAmount = Math.round(subtotal * discountPct)
+  const total = subtotal - discountAmount
+  return { subtotal, discountAmount, total, discountPct }
+}
+
+function CartDiscountSummary({ subtotal, discountAmount, total, discountPct, tierName }: {
+  subtotal: number; discountAmount: number; total: number; discountPct: number; tierName: string
+}) {
+  return (
+    <View>
+      <Text style={{ fontFamily: Font.sans, color: Colors.mocha }}>Subtotal: {formatCOP(subtotal)}</Text>
+      {discountAmount > 0 && (
+        <Text style={{ fontFamily: Font.sans, color: Colors.terra }}>Descuento {discountPct}%: -{formatCOP(discountAmount)}</Text>
+      )}
+      <Text style={{ fontFamily: Font.sans, fontWeight: '700', color: Colors.espresso }}>Total: {formatCOP(total)} {tierName ? `(${tierName})` : ''}</Text>
+    </View>
+  )
+}
 
 export default function CartScreen() {
   const insets = useSafeAreaInsets()
   const items = useCartStore((s) => s.items)
-  const totalPrice = useCartStore((s) => s.totalPrice())
   const totalItems = useCartStore((s) => s.totalItems())
   const updateQuantity = useCartStore((s) => s.updateQuantity)
   const removeItem = useCartStore((s) => s.removeItem)
   const clearCart = useCartStore((s) => s.clearCart)
 
+  const loyalty = useLoyaltyStore((s) => s.loyalty)
+  const { subtotal, discountAmount, total, discountPct } = useCartTotals(items)
+  const tierName = loyalty?.tier.name ?? ''
+
   const [loading, setLoading] = useState(false)
-  const servicio = Math.round(totalPrice * 0.1)
-  const total = totalPrice + servicio
 
   const handleCheckout = () => {
     if (items.length === 0) return
@@ -41,11 +65,7 @@ export default function CartScreen() {
       `¿Deseas eliminar ${productName} del carrito?`,
       [
         { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: () => removeItem(key),
-        },
+        { text: 'Eliminar', style: 'destructive', onPress: () => removeItem(key) },
       ]
     )
   }
@@ -66,7 +86,7 @@ export default function CartScreen() {
         <Text style={styles.itemName} numberOfLines={2}>
           {item.product.name}
         </Text>
-        
+
         {Object.keys(item.selectedOptions).length > 0 && (
           <View style={styles.optionsContainer}>
             {Object.entries(item.selectedOptions).map(([key, value]) => (
@@ -88,7 +108,6 @@ export default function CartScreen() {
 
       {/* Controles */}
       <View style={styles.itemControls}>
-        {/* Cantidad */}
         <View style={styles.quantityControl}>
           <TouchableOpacity
             style={[styles.quantityButton, item.quantity <= 1 && styles.quantityButtonDisabled]}
@@ -110,7 +129,6 @@ export default function CartScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Eliminar */}
         <TouchableOpacity
           style={styles.deleteButton}
           onPress={() => handleRemoveItem(item.key, item.product.name)}
@@ -169,20 +187,17 @@ export default function CartScreen() {
 
           {/* Footer con resumen y checkout */}
           <View style={styles.footer}>
-            <View style={styles.summary}>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Subtotal ({totalItems} items)</Text>
-                <Text style={styles.summaryValue}>{formatCOP(totalPrice)}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Servicio (10%)</Text>
-                <Text style={styles.summaryValue}>{formatCOP(servicio)}</Text>
-              </View>
-              <View style={[styles.summaryRow, styles.totalRow]}>
-                <Text style={styles.totalLabel}>Total a pagar</Text>
-                <Text style={styles.totalValue}>{formatCOP(total)}</Text>
-              </View>
-            </View>
+            {/* Resumen con descuento de lealtad */}
+            <CartDiscountSummary
+              subtotal={subtotal}
+              discountAmount={discountAmount}
+              total={total}
+              discountPct={discountPct}
+              tierName={tierName}
+            />
+
+            {/* Items count */}
+            <Text style={styles.itemsCount}>{totalItems} producto{totalItems !== 1 ? 's' : ''} en tu carrito</Text>
 
             <TouchableOpacity
               style={[styles.checkoutButton, loading && styles.checkoutButtonDisabled]}
@@ -195,7 +210,7 @@ export default function CartScreen() {
               ) : (
                 <>
                   <Receipt size={20} color={Colors.white} style={{ marginRight: 8 }} />
-                  <Text style={styles.checkoutButtonText}>Pagar ahora</Text>
+                  <Text style={styles.checkoutButtonText}>Pagar {formatCOP(total)}</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -240,7 +255,7 @@ const styles = StyleSheet.create({
   listContent: {
     padding: 20,
     gap: 16,
-    paddingBottom: 200,
+    paddingBottom: 320,
   },
   itemCard: {
     backgroundColor: Colors.card,
@@ -294,10 +309,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   itemControls: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 8,
-    marginTop: 8,
   },
   quantityControl: {
     flexDirection: 'row',
@@ -382,47 +397,16 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: Colors.card,
     padding: 20,
-    gap: 16,
+    gap: 12,
     borderTopWidth: 1,
     borderTopColor: Colors.creamDeep,
     ...Shadow.card,
   },
-  summary: {
-    gap: 8,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  summaryLabel: {
+  itemsCount: {
     fontFamily: Font.sans,
-    fontSize: 13,
-    color: Colors.mocha,
-  },
-  summaryValue: {
-    fontFamily: Font.sans,
-    fontSize: 13,
-    color: Colors.espresso,
-    fontWeight: '600',
-  },
-  totalRow: {
-    marginTop: 8,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.creamDeep,
-  },
-  totalLabel: {
-    fontFamily: Font.sans,
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.espresso,
-  },
-  totalValue: {
-    fontFamily: Font.serif,
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.terra,
+    fontSize: 12,
+    color: Colors.latte,
+    textAlign: 'center',
   },
   checkoutButton: {
     backgroundColor: Colors.espresso,

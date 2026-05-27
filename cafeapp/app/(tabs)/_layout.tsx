@@ -2,31 +2,31 @@ import { Colors, Font } from "@/constants/theme";
 import { useAuthStore } from "@/stores/useauthstore";
 import { Tabs } from "expo-router";
 import {
+  Award,
   Bell,
   ClipboardList,
   CreditCard,
   Flame,
   LayoutDashboard,
   type LucideIcon,
-  Package,
   ShoppingCart,
   User,
-  UtensilsCrossed,
+  UtensilsCrossed
 } from "lucide-react-native";
 
 // Tabs por rol — solo ve lo que necesita
 const ROLE_TABS: Record<string, string[]> = {
-  customer: ["index", "cart", "waiter-orders", "profile"],
-  waiter: ["index", "cart", "waiter-orders", "profile"],
-  kitchen: ["orders", "profile"],
-  cashier: ["cashier", "profile"],
+  customer: ["index", "cart", "loyalty-screen", "waiter-orders", "profile"],
+  waiter:   ["index", "cart", "loyalty-screen", "waiter-orders", "profile"],
+  kitchen:  ["orders", "profile"],
+  cashier:  ["cashier", "profile"],
   admin: [
     "admin-dashboard",
-    "admin-products",
     "index",
     "orders",
     "cashier",
     "waiter-orders",
+    "loyalty-screen",
     "profile",
   ],
 };
@@ -34,31 +34,31 @@ const ROLE_TABS: Record<string, string[]> = {
 type TabName =
   | "index"
   | "cart"
+  | "loyalty-screen"
   | "waiter-orders"
   | "orders"
   | "cashier"
   | "notifications"
   | "profile"
-  | "admin-dashboard"
-  | "admin-products";
+  | "admin-dashboard";
 
 const TAB_CONFIG: Record<TabName, { title: string; Icon: LucideIcon }> = {
-  "admin-dashboard": { title: "Dashboard", Icon: LayoutDashboard },
-  "admin-products": { title: "Productos", Icon: Package },
-  index: { title: "Menú", Icon: UtensilsCrossed },
-  cart: { title: "Carrito", Icon: ShoppingCart },
-  "waiter-orders": { title: "Pedidos", Icon: ClipboardList },
-  orders: { title: "Cocina", Icon: Flame },
-  cashier: { title: "Caja", Icon: CreditCard },
-  notifications: { title: "Alertas", Icon: Bell },
-  profile: { title: "Perfil", Icon: User },
+  "admin-dashboard": { title: "Dashboard",  Icon: LayoutDashboard },
+  index:             { title: "Menú",       Icon: UtensilsCrossed },
+  cart:              { title: "Carrito",    Icon: ShoppingCart },
+  "loyalty-screen":  { title: "Fidelidad", Icon: Award },
+  "waiter-orders":   { title: "Pedidos",   Icon: ClipboardList },
+  orders:            { title: "Cocina",    Icon: Flame },
+  cashier:           { title: "Caja",      Icon: CreditCard },
+  notifications:     { title: "Alertas",   Icon: Bell },
+  profile:           { title: "Perfil",    Icon: User },
 };
 
 const ALL_TABS: TabName[] = [
   "admin-dashboard",
-  'admin-products',
   "index",
   "cart",
+  "loyalty-screen",
   "waiter-orders",
   "orders",
   "cashier",

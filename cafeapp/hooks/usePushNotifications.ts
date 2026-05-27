@@ -46,6 +46,12 @@ export function usePushNotifications() {
 }
 
 async function registerForPushNotifications(userId: string) {
+  // ✅ Salir si es web — no soportado
+  if (Platform.OS === 'web') {
+    console.log('Push notifications not supported on web')
+    return
+  }
+
   if (!Device.isDevice) {
     console.log('Push notifications require a physical device')
     return

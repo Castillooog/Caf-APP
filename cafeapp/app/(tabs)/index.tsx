@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   View,
   Text,
-  StyleSheet,
+ StyleSheet,
   FlatList,
   ActivityIndicator,
   RefreshControl,
@@ -21,7 +21,13 @@ import { CategoryTabs } from '@/components/CategoryTabs'
 import { ProductCard } from '@/components/Productcard'
 import { FeaturedBanner } from '@/components/Featuredbanner'
 import { CartBar } from '@/components/CartBar'
+import { useLoyaltyStore } from '@/stores/useLoyaltyStore'
+import { useAuthStore } from '@/stores/useauthstore'
+import { useProductsStore } from '@/stores/useProductsStore'
 import type { Product } from '@/lib/supabase'
+
+// Nombre exacto de tu categoría Promociones (debe coincidir con el de Supabase)
+const PROMOCIONES_NAME = 'Promociones'
 
 function SectionTitle({ title, count }: { title: string; count: number }) {
   return (
@@ -62,13 +68,7 @@ const sectionStyles = StyleSheet.create({
   },
 })
 
-function SearchBar({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (v: string) => void
-}) {
+function SearchBar({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <View style={searchStyles.wrapper}>
       <Search size={18} color={Colors.latte} strokeWidth={2} />
@@ -122,19 +122,37 @@ export default function MenuScreen() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [refreshing, setRefreshing] = useState(false)
-  
+
   const fadeAnim = useRef(new Animated.Value(0)).current
   const slideAnim = useRef(new Animated.Value(30)).current
 
+  // Lealtad
+  const { profile } = useAuthStore()
+  const { tierProducts, loyalty, fetchLoyalty, fetchAllTiers } = useLoyaltyStore()
+
+  // Realtime productos
+  const { startRealtime } = useProductsStore()
+
+  // Realtime listener
+  useEffect(() => {
+    const unsubscribe = startRealtime()
+
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    if (profile?.id) {
+      fetchLoyalty(profile.id)
+      fetchAllTiers()
+    }
+  }, [profile?.id])
+
   const { categories, loading: catLoading } = useCategories()
-  const {
-    products,
-    loading: prodLoading,
-    refetch,
-  } = useProducts({
+  const { products, loading: prodLoading, refetch } = useProducts({
     categoryId: selectedCategoryId ?? undefined,
     search: search.trim(),
   })
+
   const { products: featuredProducts } = useProducts({ featuredOnly: true })
 
   useEffect(() => {
@@ -147,6 +165,7 @@ export default function MenuScreen() {
     useCallback(() => {
       fadeAnim.setValue(0)
       slideAnim.setValue(30)
+
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
@@ -171,8 +190,38 @@ export default function MenuScreen() {
 
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId)
 
+  // ¿Está seleccionada la categoría Promociones?
+  const isPromocionesSelected = selectedCategory?.name === PROMOCIONES_NAME
+
+  // Productos a mostrar: si es Promociones, usar tierProducts del store de lealtad
+  const promoProducts: Product[] = isPromocionesSelected
+    ? tierProducts.map((tp) => ({
+        ...tp.products,
+        price: tp.special_price ?? tp.products.price,
+        original_price: tp.products.price,
+      } as unknown as Product))
+    : []
+
+  const displayProducts = isPromocionesSelected ? promoProducts : products
+  const displayCount = isPromocionesSelected ? promoProducts.length : products.length
+
   const renderEmpty = () => {
     if (prodLoading) return null
+
+    if (isPromocionesSelected && tierProducts.length === 0) {
+      return (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyEmoji}>🎁</Text>
+          <Text style={styles.emptyTitle}>Sin promociones</Text>
+          <Text style={styles.emptySubtitle}>
+            {loyalty?.tier
+              ? `Tu nivel ${loyalty.tier.name} no tiene productos especiales por ahora`
+              : 'Haz más pedidos para desbloquear promociones exclusivas'}
+          </Text>
+        </View>
+      )
+    }
+
     return (
       <View style={styles.emptyState}>
         <Text style={styles.emptyEmoji}>☕</Text>
@@ -198,6 +247,7 @@ export default function MenuScreen() {
       }}
     >
       <MenuHeader />
+
       <SearchBar value={search} onChange={setSearch} />
 
       {!search && <FeaturedBanner products={featuredProducts} />}
@@ -211,10 +261,36 @@ export default function MenuScreen() {
       )}
 
       {selectedCategory && (
-        <SectionTitle
-          title={selectedCategory.name}
-          count={products.length}
-        />
+        <SectionTitle title={selectedCategory.name} count={displayCount} />
+      )}
+
+      {/* Banner del tier */}
+      {isPromocionesSelected && loyalty?.tier && (
+        <View
+          style={[
+            styles.tierBanner,
+            {
+              borderColor: loyalty.tier.color + '60',
+              backgroundColor: loyalty.tier.color + '12',
+            },
+          ]}
+        >
+          <Text style={styles.tierBannerIcon}>
+            {loyalty.tier.icon}
+          </Text>
+
+          <Text
+            style={[
+              styles.tierBannerText,
+              { color: loyalty.tier.color },
+            ]}
+          >
+            Productos exclusivos de tu nivel{' '}
+            <Text style={{ fontWeight: '800' }}>
+              {loyalty.tier.name}
+            </Text>
+          </Text>
+        </View>
       )}
 
       {prodLoading && (
@@ -228,8 +304,9 @@ export default function MenuScreen() {
   return (
     <View style={styles.screen}>
       <StatusBar style="dark" />
+
       <FlatList
-        data={products}
+        data={displayProducts}
         keyExtractor={(item) => item.id}
         renderItem={renderProduct}
         ListHeaderComponent={ListHeader}
@@ -268,34 +345,63 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.cream,
   },
+
   listContent: {
     flexGrow: 1,
   },
+
   loadingWrapper: {
     paddingVertical: 32,
     alignItems: 'center',
   },
+
   emptyState: {
     alignItems: 'center',
     paddingTop: 48,
     paddingHorizontal: 40,
     gap: 10,
   },
+
   emptyEmoji: {
     fontSize: 40,
     marginBottom: 4,
   },
+
   emptyTitle: {
     fontFamily: Font.serif,
     fontSize: 20,
     fontWeight: '700',
     color: Colors.espresso,
   },
+
   emptySubtitle: {
     fontFamily: Font.sans,
     fontSize: 14,
     color: Colors.mocha,
     textAlign: 'center',
     lineHeight: 20,
+  },
+
+  tierBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 20,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+
+  tierBannerIcon: {
+    fontSize: 20,
+  },
+
+  tierBannerText: {
+    fontFamily: Font.sans,
+    fontSize: 13,
+    flex: 1,
+    lineHeight: 18,
   },
 })

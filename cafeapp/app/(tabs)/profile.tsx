@@ -8,7 +8,6 @@ import {
   Alert,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { supabase } from '@/lib/supabase'
 import {
   User,
   Mail,
@@ -26,10 +25,10 @@ import { router } from 'expo-router'
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets()
-  const { profile, session } = useAuthStore()
+  const { profile, session, signOut } = useAuthStore()
   const totalOrders = useCartStore((s) => s.items.length)
 
-  const handleSignOut = async () => {
+  const handleSignOut = () => {
     Alert.alert(
       'Cerrar sesión',
       '¿Estás seguro que deseas cerrar sesión?',
@@ -39,19 +38,9 @@ export default function ProfileScreen() {
           text: 'Cerrar sesión',
           style: 'destructive',
           onPress: async () => {
-            try {
-              // ✅ 1. Limpiar stores locales primero
-              useCartStore.getState().clearCart?.()
-              
-              // ✅ 2. Cerrar sesión en Supabase (scope: global para todas las sesiones)
-              const { error } = await supabase.auth.signOut({ scope: 'global' })
-              if (error) throw error
-              
-              // ✅ 3. Redirigir al login MANUALMENTE
-              router.replace('/(auth)/login')
-            } catch (err: any) {
-              Alert.alert('Error', err.message ?? 'No se pudo cerrar sesión')
-            }
+            useCartStore.getState().clearCart?.()
+            await signOut()
+            router.replace('/(auth)/login')
           },
         },
       ]
@@ -64,6 +53,9 @@ export default function ProfileScreen() {
   const roleLabels: Record<string, string> = {
     customer: 'Cliente',
     staff:    'Personal',
+    waiter:   'Mesero',
+    kitchen:  'Cocina',
+    cashier:  'Cajero',
     admin:    'Administrador',
   }
 
@@ -73,7 +65,6 @@ export default function ProfileScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* Header */}
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
           <Text style={styles.avatarText}>
@@ -82,30 +73,23 @@ export default function ProfileScreen() {
         </View>
         <Text style={styles.userName}>{profile?.full_name ?? 'Usuario'}</Text>
         <View style={styles.roleBadge}>
-          <Text style={styles.roleText}>{roleLabels[userRole]}</Text>
+          <Text style={styles.roleText}>{roleLabels[userRole] ?? userRole}</Text>
         </View>
       </View>
 
-      {/* Información */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Información</Text>
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
-            <View style={styles.infoIcon}>
-              <User size={20} color={Colors.mocha} />
-            </View>
+            <View style={styles.infoIcon}><User size={20} color={Colors.mocha} /></View>
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>Nombre completo</Text>
               <Text style={styles.infoValue}>{profile?.full_name ?? 'No especificado'}</Text>
             </View>
           </View>
-
           <View style={styles.divider} />
-
           <View style={styles.infoRow}>
-            <View style={styles.infoIcon}>
-              <Mail size={20} color={Colors.mocha} />
-            </View>
+            <View style={styles.infoIcon}><Mail size={20} color={Colors.mocha} /></View>
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>Correo electrónico</Text>
               <Text style={styles.infoValue}>{userEmail}</Text>
@@ -114,7 +98,6 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* Actividad */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Actividad</Text>
         <View style={styles.statsContainer}>
@@ -136,7 +119,6 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* Configuración */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Configuración</Text>
         <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
@@ -155,12 +137,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Cerrar sesión */}
-      <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={handleSignOut}
-        activeOpacity={0.8}
-      >
+      <TouchableOpacity style={styles.logoutButton} onPress={handleSignOut} activeOpacity={0.8}>
         <LogOut size={20} color={Colors.terra} />
         <Text style={styles.logoutText}>Cerrar sesión</Text>
       </TouchableOpacity>
@@ -174,12 +151,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: 20, paddingBottom: 40 },
   header: { alignItems: 'center', marginBottom: 32, marginTop: 8 },
-  avatarContainer: {
-    width: 100, height: 100, borderRadius: 50,
-    backgroundColor: Colors.espresso,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 16, ...Shadow.card,
-  },
+  avatarContainer: { width: 100, height: 100, borderRadius: 50, backgroundColor: Colors.espresso, alignItems: 'center', justifyContent: 'center', marginBottom: 16, ...Shadow.card },
   avatarText: { fontFamily: Font.serif, fontSize: 40, fontWeight: '700', color: Colors.cream },
   userName: { fontFamily: Font.serif, fontSize: 24, fontWeight: '700', color: Colors.espresso, marginBottom: 8 },
   roleBadge: { backgroundColor: Colors.terraDust, paddingHorizontal: 16, paddingVertical: 6, borderRadius: Radius.full },
